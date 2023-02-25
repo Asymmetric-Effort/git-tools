@@ -1,2 +1,2 @@
 #!/bin/bash -e
-"$(which python)" --command use --server "${1}"
+"$(which python)" git_server.py --command use --server "${1}"

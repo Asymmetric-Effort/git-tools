@@ -1,3 +1,3 @@
 #!/bin/bash -e
 
-"$(which python)" --command delete --repo "${1}"
+"$(which python)" git_server.py --command delete --repo "${1}"

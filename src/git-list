@@ -1,2 +1,2 @@
 #!/bin/bash -e
-"$(which python)" --command list
+"$(which python)" git_server.py --command list
