@@ -7,8 +7,13 @@ Asymmetric-Effort/Bootstrap/Git-Tools
     interact smoothly with the git-server project.
 
 ## Installing/Removing `git-tools`...
-  * `make git_tools/install` -> installs the git tools
-  * `make git_tools/remove`  -> uninstalls the git tools
+### To Install...
+  Execute `make git_tools/install`
+  > Note: you must run `source ~/.zshrc` or open a new terminal.
+
+### To Remove...
+  Execute `make git_tools/remove`
+
 
 ## Commands in the Toolkit
 ### `git use <git server>`
