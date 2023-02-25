@@ -1,0 +1,2 @@
+#!/bin/bash -e
+"$(which python)" --command use --server "${1}"
