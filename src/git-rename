@@ -1,0 +1,7 @@
+#!/bin/bash -e
+echo "-----------------"
+echo "     source: ${1}"
+echo "destination: ${2}"
+echo "-----------------"
+"$(which python)" ~/git-tools/git_server.py --command rename --source "${1}" --destination "${2}"
+exit $?
