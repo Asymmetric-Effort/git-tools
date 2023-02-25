@@ -1,2 +1,3 @@
 #!/bin/bash -e
-"$(which python)" git_server.py --command list
+"$(which python)" ~/git-tools/git_server.py --command list
+exit $?

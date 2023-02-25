@@ -1,2 +1,3 @@
 #!/bin/bash -e
-"$(which python)" git_server.py --command use --server "${1}"
+"$(which python)" ~/git-tools/git_server.py --command use --server "${1}"
+exit $?

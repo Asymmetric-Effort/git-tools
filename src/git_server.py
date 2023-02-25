@@ -33,6 +33,8 @@ disallowed_git_servers = [
     'vsts.com',
 ]
 
+PREFERRED_SERVER_KEY = "core.preferredGitserver"
+
 CMD_CREATE = "create"
 CMD_DELETE = "delete"
 CMD_LIST = "list"
@@ -92,15 +94,22 @@ class GitServer(object):
             return ""
 
     @staticmethod
-    def runner(command: list) -> (int, str):
+    def runner(command: str) -> (int, str):
         """
             Execute a command and return the captured output.
 
-            :param command: list
+            :param command: str
             :return: int(exit_code), str(stdout)
         """
         try:
-            return EXIT_SUCCESS, str(run(command, shell=True, check=True, capture_output=True).stdout)
+            print(f"git-tools[runner] cmd:{command}")
+            result = run(command,
+                         shell=True,
+                         check=False,
+                         capture_output=True)
+            print(f"git-tools[runner] result[{result.returncode}]:"
+                  f"'{result.stdout.decode()}'")
+            return result.returncode, result.stdout.decode()
         except Exception as e:
             return EXIT_ERROR_LOCAL_GIT_COMMAND, f"{e}"
 
@@ -129,14 +138,14 @@ class GitServer(object):
             :return: int(exit_code), str(stdout)
         """
         try:
-            cmd = [f"git config",
-                   f"{self.__global_flag(this_scope)}",
-                   "--get git_tools.preferred_gitserver"]
+            cmd = "git config" + \
+                  f"{self.__global_flag(this_scope)}" + \
+                  f"--get {PREFERRED_SERVER_KEY}"
             git_server = self.runner(cmd)
             if git_server == "":
                 return EXIT_ERROR_GET_SERVER_BAD_INPUT, \
-                    "git_tools.preferred_gitserver not defined." \
-                    "Use 'git use <private_server>' first."
+                    f"{PREFERRED_SERVER_KEY} not defined." \
+                    f"Use 'git {CMD_USE} <private_server>' first."
             else:
                 return EXIT_SUCCESS, git_server
         except Exception as e:
@@ -158,12 +167,21 @@ class GitServer(object):
             :return: int(exit_code), str(stdout)
         """
         try:
+            print(f"setting preferred server:'{server_name}'")
             if self.__valid_server_name(server_name):
-                cmd = [f"git config",
-                       f"{self.__global_flag(this_scope)}",
-                       f"git_tools.preferred_gitserver '{server_name}'"]
-                git_server = self.runner(cmd)
-                return EXIT_SUCCESS, git_server
+                cmd = "git config " + \
+                      f"{self.__global_flag(this_scope)} " + \
+                      f"{PREFERRED_SERVER_KEY} " + \
+                      f"{server_name}"
+                exit_code, stdout = self.runner(cmd)
+                if exit_code != 0:
+                    if this_scope:
+                        return exit_code, stdout
+                    else:
+                        return self.__set_server(server_name=server_name, this_scope=True)
+                else:
+                    return exit_code, stdout
+
             else:
                 return EXIT_ERROR_SET_SERVER_INVALID, \
                     f"{server_name} is invalid or is one of several " \
@@ -172,7 +190,8 @@ class GitServer(object):
             if this_scope:
                 return EXIT_ERROR_SET_SERVER_EXCEPTION, f"(setting preferred server) {e}"
             else:
-                return self.__set_server(server_name=server_name, this_scope=this_scope)
+                print("escalating scope")
+                return self.__set_server(server_name=server_name, this_scope=True)
 
     def use(self, server_name: str,
             this_scope: bool = False) -> (int, str):
@@ -299,7 +318,9 @@ def show_usage(error: str, exit_code: int = 255) -> int:
         :param exit_code: int (default: 255)
         :return: int
     """
-    print(f"Error: {error}\n\n{help_text}\n")
+    if error.strip() == "":
+        error = "unspecified"
+    print(f"Error: '{error}'\n\n{help_text}\n")
     return exit_code
 
 
@@ -329,7 +350,12 @@ def main() -> int:
             return show_usage("repo should not be specified for "
                               f"{args.command}",
                               EXIT_ERROR_ARG_USE_REPO_SPECIFIED)
-        git.use(server_name=args.server, this_scope=args.scope)
+        exit_code, text = git.use(server_name=args.server, this_scope=args.scope)
+        if exit_code != 0:
+            return show_usage(text, exit_code)
+        else:
+            print(text)
+            return exit_code
 
     elif args.command in [CMD_CREATE, CMD_DELETE]:
         """

@@ -49,11 +49,11 @@ which is not initialized as a git repository, the command will configure the
 This configuration will be stored as:
 
 ```
-[git_tools]
-     preferred_gitserver = 'server.fqdn.tld' 
+[core]
+     preferredGitserver = 'server.fqdn.tld' 
 ```
 
 This change is effected through the following command, wrapped by the
 python3 tooling:
 
-  `git config [--global] git_tools.preferred_gitserver 'server.fqdn.tld'`
+  `git config [--global] core.preferredGitserver 'server.fqdn.tld'`
