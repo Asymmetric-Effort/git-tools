@@ -1,3 +1,9 @@
 #!/bin/bash -e
-"$(which python)" ~/git-tools/git_server.py --command use --server "${1}"
-exit $?
+if [[ "${2}" == "--debug" ]]; then
+  "$(which python)" ~/git-tools/git_server.py --debug --command use --server "${1}"
+  exit $?
+else
+  "$(which python)" ~/git-tools/git_server.py --command use --server "${1}"
+  exit $?
+fi
+

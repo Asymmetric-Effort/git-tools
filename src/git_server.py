@@ -197,7 +197,7 @@ class GitServer(object):
             :return: int(exit_code), str(stdout)
         """
         try:
-            print(f"setting preferred server:'{server_name}'")
+            self.debug(f"setting preferred server:'{server_name}'")
             if self.__valid_server_name(server_name):
                 cmd = "git config " + \
                       f"{self.__global_flag(this_scope)} " + \
@@ -220,7 +220,7 @@ class GitServer(object):
             if this_scope:
                 return EXIT_ERROR_SET_SERVER_EXCEPTION, f"(setting preferred server) {e}"
             else:
-                print("escalating scope")
+                self.debug("escalating scope")
                 return self.__set_server(server_name=server_name, this_scope=True)
 
     def create_repository(self, repo: str,
@@ -354,7 +354,14 @@ class GitServer(object):
             :param this_scope: bool (default False
             :return: int(exit_code), str(stdout)
         """
-        return self.__set_server(server_name=server_name, this_scope=this_scope)
+        exit_code, stdout = self.__set_server(server_name=server_name,
+                                              this_scope=this_scope)
+        if exit_code == 0:
+            return exit_code, \
+                f"Set preferred server ('{server_name}'): ok"
+        else:
+            return exit_code, \
+                f"Set preferred server ('{server_name}'): failed"
 
 
 def get_args() -> Namespace:
