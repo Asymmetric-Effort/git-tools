@@ -1,3 +1,10 @@
 #!/bin/bash -e
-"$(which python)" ~/git-tools/git_server.py --command create --repo "${1}"
-exit $?
+if [[ "${2}" == "--debug" ]]; then
+  echo "operation: 'create', name: '${1}'"
+  "$(which python)" ~/git-tools/git_server.py --debug --command create --repo "${1}"
+  exit $?
+else
+  "$(which python)" ~/git-tools/git_server.py --command create --repo "${1}"
+  exit $?
+fi
+

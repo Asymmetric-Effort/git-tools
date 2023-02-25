@@ -100,16 +100,17 @@ class GitServer(object):
                 return False
         return True
 
-    @staticmethod
-    def __valid_repo_name(repo: str) -> bool:
+    def __valid_repo_name(self, repo: str) -> bool:
         """
             Determine if the input string is a valid repository name
 
             :param repo: str
             :return: bool
         """
-        pattern = compile("^[a-zA-Z.-_/0-9]{1-32}$")
-        return not (pattern.match(repo) is None)
+        self.debug(f"Validating repo '{repo}'")
+        pattern = compile("^[a-zA-Z][a-zA-Z./-_/0-9]+[a-zA-Z0-9]$")
+        self.debug(f"Valid? {pattern.match(repo)}")
+        return pattern.match(repo) is not None
 
     @staticmethod
     def __global_flag(global_scope: bool) -> str:
@@ -141,19 +142,19 @@ class GitServer(object):
         except Exception as e:
             return EXIT_ERROR_LOCAL_GIT_COMMAND, f"{e}"
 
-    def ssh_runner(self, server: str, command: str,
-                   args: list = []) -> (int, str):
+    def ssh_runner(self,
+                   server: str,
+                   command: str) -> (int, str):
         """
             Execute an ssh command against the remote git server.
 
             :param server: str
             :param command: str
-            :param args: list (default: [])
             :return: int(exit_code), str(stdout)
         """
         try:
             cmd = f"ssh -o 'StrictHostKeyChecking no' " + \
-                  f"git@{server} {command} {' '.join(args)}"
+                  f"git@{server} {command}"
             self.debug(f"command(ssh_runner): {cmd}")
             return self.runner(cmd)
         except Exception as e:
@@ -232,18 +233,29 @@ class GitServer(object):
             :param search_scope: bool (default: false)
             :return: int (exit_code), str (list of repos)
         """
-        stdout = "not_defined"
+        server = ""
         try:
+            self.debug(f"Get Preferred server to create '{repo}'")
             exit_code, stdout = self.__get_server(search_scope)
-            if exit_code != 0:
-                return exit_code, stdout
-            if self.__valid_repo_name(repo):
-                return self.ssh_runner(stdout, CMD_CREATE, [repo])
+            if exit_code == 0:
+                self.debug(f"Preferred server found for create '{repo}'")
             else:
+                self.debug(f"could not find preferred server"
+                           f"[{exit_code}]: '{stdout}'")
+                return exit_code, stdout
+            server = stdout
+            self.debug(f"Validate repo name ({repo}) "
+                       f"for create on '{server}'")
+            if self.__valid_repo_name(repo):
+                self.debug(f"repo name is valid: '{repo}'")
+                cmd = f"create {repo}"
+                return self.ssh_runner(server=server, command=cmd)
+            else:
+                self.debug(f"repo name is not valid: '{repo}'")
                 return EXIT_ERROR_CREATE_REPO_INVALID, f"{repo} is not valid"
         except Exception as e:
             return EXIT_ERROR_CREATE_REPO_EXCEPTION, \
-                f"could not create repository ({repo}) on {stdout}. {e}"
+                f"could not create repository ({repo}) on '{server}'. {e}"
 
     def delete_repository(self, repo: str,
                           search_scope: bool = False) -> (int, str):
@@ -254,19 +266,29 @@ class GitServer(object):
             :param search_scope: bool (default: false)
             :return: int (exit_code), str (list of repos)
         """
-        stdout = "not_defined"
+        server = ""
         try:
+            self.debug(f"Get Preferred server to delete '{repo}'")
             exit_code, stdout = self.__get_server(search_scope)
-            if exit_code != 0:
-                return exit_code, stdout
-            if self.__valid_repo_name(repo):
-                return self.ssh_runner(stdout, CMD_DELETE, [repo])
+            if exit_code == 0:
+                self.debug(f"Preferred server found for delete '{repo}'")
             else:
+                self.debug(f"could not find preferred server"
+                           f"[{exit_code}]: '{stdout}'")
+                return exit_code, stdout
+            server = stdout
+            self.debug(f"Validate repo name ({repo}) "
+                       f"for delete on '{server}'")
+            if self.__valid_repo_name(repo):
+                self.debug(f"repo name is valid: '{repo}'")
+                cmd = f"delete {repo}"
+                return self.ssh_runner(server=server, command=cmd)
+            else:
+                self.debug(f"repo name is not valid: '{repo}'")
                 return EXIT_ERROR_DELETE_REPO_INVALID, f"{repo} is not valid"
         except Exception as e:
             return EXIT_ERROR_DELETE_REPO_EXCEPTION, \
-                "Error: could not delete repository " \
-                f"({repo}) on {stdout}. {e}"
+                f"could not delete repository ({repo}) on '{server}'. {e}"
 
     def list_repositories(self, search_scope: bool = False) -> (int, str):
         """
@@ -475,13 +497,13 @@ def main() -> int:
                               f"{args.command}",
                               EXIT_ERROR_ARG_USE_REPO_SPECIFIED)
 
-        exit_code, text = git.use(server_name=args.server, this_scope=args.scope)
+        exit_code, stdout = git.use(server_name=args.server, this_scope=args.scope)
 
-        if exit_code != 0:
-            return show_usage(text, exit_code)
-        else:
-            print(text)
+        if exit_code == 0:
+            print(stdout)
             return exit_code
+        else:
+            return show_usage(stdout, exit_code)
 
     elif args.command in [CMD_CREATE, CMD_DELETE]:
         """
@@ -503,11 +525,16 @@ def main() -> int:
                               EXIT_ERROR_CRDEL_SERVER_SPECIFIED)
 
         if args.command == CMD_CREATE:
-            return git.create_repository(repo=args.repo,
-                                         search_scope=args.scope)
+            exit_code, stdout = git.create_repository(repo=args.repo,
+                                                      search_scope=args.scope)
         else:
-            return git.delete_repository(repo=args.repo,
-                                         search_scope=args.scope)
+            exit_code, stdout = git.delete_repository(repo=args.repo,
+                                                      search_scope=args.scope)
+        if exit_code == 0:
+            print("OK")
+            return 0
+        else:
+            return show_usage(stdout, exit_code)
 
     elif args.command in [CMD_LIST]:
         """
@@ -558,10 +585,14 @@ def main() -> int:
                               f"{args.command}",
                               EXIT_ERROR_ARG_RENAME_DEST_REPO_MISSING)
 
-        return git.rename(source_repo=args.source.strip(),
-                          destination_repo=args.destination.strip(),
-                          search_scope=args.scope)
+        exit_code, stdout = git.rename(
+            source_repo=args.source.strip(),
+            destination_repo=args.destination.strip(),
+            search_scope=args.scope)
 
+        if exit_code != 0:
+            return show_usage(stdout, exit_code)
+        return exit_code
     else:
         return show_usage("Internal programming error "
                           f"(command: {args.command})",
