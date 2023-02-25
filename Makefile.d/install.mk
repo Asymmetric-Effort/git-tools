@@ -3,6 +3,7 @@ git_tools/install: git_tools/backup
 	@( \
 		[[ ! -d ~/git-tools ]] && mkdir -p ~/git-tools; \
 		cp -rfvp src/ ~/git-tools/; \
+		chmod +x ~/git-tools/*; \
 		case "$${SHELL}" in \
 		"/bin/bash") \
 			echo "append path (bash)"; \
