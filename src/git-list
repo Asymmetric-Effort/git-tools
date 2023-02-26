@@ -1,6 +1,6 @@
 #!/bin/bash -e
 if [[ "${1}" == "--debug" ]]; then
-  echo "operation: 'create', name: '${1}'"
+  echo "operation: 'list'  (this: $0)"
   "$(which python)" ~/git-tools/git_server.py --debug --command list
   exit $?
 else
