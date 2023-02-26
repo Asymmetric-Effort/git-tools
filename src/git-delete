@@ -1,6 +1,6 @@
 #!/bin/bash -e
 if [[ "${2}" == "--debug" ]]; then
-  echo "operation: 'delete', name: '${1}'"
+  echo "operation: 'delete', name: '${1}'  (this: $0)"
   "$(which python)" ~/git-tools/git_server.py --debug --command delete --repo "${1}"
   exit $?
 else

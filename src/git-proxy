@@ -1,0 +1,10 @@
+#!/bin/bash -e
+if [[ "${2}" == "--debug" ]]; then
+  echo "operation: 'proxy', name: '${1}'  (this: $0)"
+  "$(which python)" ~/git-tools/git_server.py --debug --command proxy --repo "${1}"
+  exit $?
+else
+  "$(which python)" ~/git-tools/git_server.py --command proxy --repo "${1}"
+  exit $?
+fi
+
