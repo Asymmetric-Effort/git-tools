@@ -54,10 +54,11 @@ CMD_USE = "use"
 
 help_text = """
 Usage:
-    git create <repo>
-    git delete <repo>
-    git list 
-    git use <server>
+    git create <repo> [--debug]
+    git delete <repo> [--debug]
+    git list [--debug]
+    git rename <old_repo_name> <new_repo_name> [--debug]
+    git use <server> [--debug]
 """
 
 
