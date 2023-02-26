@@ -430,7 +430,7 @@ class GitServer(object):
                        f"for create on '{server}'")
             if self.__valid_repo_name(repo):
                 self.debug(f"repo name is valid: '{repo}'")
-                cmd = f"create {repo}"
+                cmd = f"create --repo {repo}"
                 return self.ssh_runner(server=server, command=cmd)
             else:
                 self.debug(f"repo name is not valid: '{repo}'")
