@@ -1,0 +1,39 @@
+#!/bin/bash -e
+
+export DEBUG_FLAG=""
+export SSH_KEY=""
+
+while [[ $# -gt 0 ]]; do
+  case "${1}" in
+  --sshkey)
+    export SSHKEY="${2} ${3} ${4}"
+    shift # past argument
+    shift # past value
+    ;;
+  --debug)
+    echo "DEBUG mode active (remaining: ${#})"
+    export DEBUG_FLAG="--debug"
+    shift                   # past argument
+    [[ $# -gt 0 ]] && shift # past value
+    ;;
+  --*)
+    echo "Unknown option ${1}"
+    exit 1
+    ;;
+  *)
+    shift # past argument
+    ;;
+  esac
+done
+
+if [[ "${DEBUG_FLAG}" == "--debug" ]]; then
+  echo "operation: 'proxy', name: '${1}'  (this: $0)"
+fi
+
+if [[ "${SSHKEY}" == "" ]]; then
+  echo "Invalid/missing sshkey"
+  exit 1
+fi
+
+"$(which python)" ~/git-tools/git_server.py ${DEBUG_FLAG} --command authorize --sshkey "${SSHKEY}"
+exit $?

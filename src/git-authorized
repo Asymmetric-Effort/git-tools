@@ -1,0 +1,10 @@
+#!/bin/bash -e
+
+if [[ "${1}" == "--debug" ]]; then
+  echo "operation: 'authorized'  (this: $0)"
+  "$(which python)" ~/git-tools/git_server.py --debug --command authorized
+  exit $?
+else
+  "$(which python)" ~/git-tools/git_server.py --command authorized
+  exit $?
+fi

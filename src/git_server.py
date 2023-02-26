@@ -1,62 +1,49 @@
 #!/usr/bin/env python3
 from argparse import ArgumentParser
-from argparse import Namespace
 from re import compile
 from subprocess import run
 
 EXIT_SUCCESS = 0
+
 EXIT_ERROR_LOCAL_GIT_COMMAND = 1
 EXIT_ERROR_SSH_GIT_COMMAND = 2
+EXIT_ERROR_GET_SERVER_BAD_INPUT = 3
+EXIT_ERROR_GET_SERVER_EXCEPTION = 4
+EXIT_ERROR_SET_SERVER_INVALID = 5
+EXIT_ERROR_SET_SERVER_EXCEPTION = 6
+EXIT_ERROR_AUTH_REPO_EXCEPTION = 7
+EXIT_ERROR_CREATE_REPO_INVALID = 8
+EXIT_ERROR_CREATE_REPO_EXCEPTION = 9
+EXIT_ERROR_DELETE_REPO_INVALID = 10
+EXIT_ERROR_DELETE_REPO_EXCEPTION = 11
+EXIT_ERROR_LIST_REPOS_EXCEPTION = 12
+EXIT_ERROR_PROXY_REPO_EXCEPTION = 13
+EXIT_ERROR_SSH_INVALID_KEY = 14
 
-EXIT_ERROR_ARG_USE_SERVER_MISSING = 10
-EXIT_ERROR_ARG_USE_REPO_SPECIFIED = 11
-EXIT_ERROR_CRDEL_REPO_MISSING = 14
-EXIT_ERROR_CRDEL_SERVER_SPECIFIED = 15
+EXIT_UNDEFINED_ERROR = 253
+EXIT_UNSPECIFIED_ERROR = 254
+EXIT_INTERNAL_ERROR_INVALID_CMD = 255
 
-EXIT_ERROR_LIST_REPO_SPECIFIED = 20
-EXIT_ERROR_LIST_SERVER_SPECIFIED = 25
-
-EXIT_ERROR_GET_SERVER_BAD_INPUT = 30
-EXIT_ERROR_GET_SERVER_EXCEPTION = 35
-
-EXIT_ERROR_SET_SERVER_INVALID = 40
-EXIT_ERROR_SET_SERVER_EXCEPTION = 45
-
-EXIT_ERROR_LIST_REPOS_EXCEPTION = 50
-
-EXIT_ERROR_CREATE_REPO_INVALID = 60
-EXIT_ERROR_CREATE_REPO_EXCEPTION = 65
-
-EXIT_ERROR_DELETE_REPO_INVALID = 70
-EXIT_ERROR_DELETE_REPO_EXCEPTION = 75
-
-EXIT_ERROR_ARG_USE_SERVER_SPECIFIED = 80
-EXIT_ERROR_ARG_RENAME_SRC_REPO_MISSING = 82
-EXIT_ERROR_ARG_RENAME_DEST_REPO_MISSING = 85
-
-EXIT_INTERNAL_ERROR_INVALID_CMD = 200
-
-disallowed_git_servers = [
-    'github.com',
-    'bitbucket.com',
-    'gitlabs.com'
-    'visualstudio.com',
-    'vsts.com',
-]
-
+REQUIRE_NO_PARAMETERS = {}
 PREFERRED_SERVER_KEY = "core.preferredGitserver"
 
+CMD_AUTHORIZE = "authorize"
+CMD_AUTHORIZED = "authorized"
 CMD_CREATE = "create"
 CMD_DELETE = "delete"
 CMD_LIST = "list"
+CMD_PROXY = "proxy"
 CMD_RENAME = "rename"
 CMD_USE = "use"
 
 help_text = """
 Usage:
+    git authorize <ssh_key> [--debug]
+    git authorized [--debug]
     git create <repo> [--debug]
     git delete <repo> [--debug]
     git list [--debug]
+    git proxy <git ssh repo url> [--debug]
     git rename <old_repo_name> <new_repo_name> [--debug]
     git use <server> [--debug]
 """
@@ -66,15 +53,141 @@ class GitServer(object):
     """
         Class for Interacting with Git (local and remote)
     """
+    """
+        __valid_repo_name_regex:
+            A regular expression used to evaluate the validity
+            of a repository name used with our git-tools and the
+            git-server
+    """
+    __valid_repo_name_regex = "^[a-zA-Z][a-zA-Z./-_/0-9]+[a-zA-Z0-9]$"
+    """
+        __valid_sshkey_regex:
+            A regular expression used to evaluate the validity of
+            an ssh key used with ssh for git-server and git-tools.
+    """
+    __valid_sshkey_regex = "^(" + \
+                           "(" + \
+                           "ssh-rsa|" + \
+                           "ssh-dss|" + \
+                           "ecdsa-sha2-nistp256|" + \
+                           "ecdsa-sha2-nistp384|" + \
+                           "ecdsa-sha2-nistp521|" + \
+                           "ssh-ed25519" + \
+                           ") " + \
+                           "AAAA[0-9A-Za-z+/]+[=]{0,3}" + \
+                           "( " + \
+                           "[^@]+@[^@]+" + \
+                           ")?" + \
+                           ")$"
+    """
+        __arg_error_codes:
+            A set of error codes for invalid arguments
+            encountered when running GitServer.parameter_check()
+    """
+    __arg_error_codes = {
+        "prohibited_repo": 100,
+        "prohibited_source": 101,
+        "prohibited_destination": 102,
+        "prohibited_server": 103,
+        "required_sshkey": 104,
+        "required_repo": 105,
+        "required_source": 106,
+        "required_destination": 107,
+        "required_server": 107
+    }
+    """
+        __disallowed_git_servers:
+            A list of git servers we will not allow to be used
+            as preferred (local) git servers for use with the
+            git-tools.
+    """
+    __disallowed_git_servers = [
+        'github.com',
+        'bitbucket.com',
+        'gitlabs.com'
+        'visualstudio.com',
+        'vsts.com',
+    ]
 
-    def __init__(self, debug: bool = False) -> None:
+    def __init__(self) -> None:
         """
-            class constructor
+            class constructor.
+            Processes the commandline arguments.
 
-            :param debug: bool
             :return: None
         """
-        self.__debug = debug
+        parser = ArgumentParser(description="Git Tools CommandLine")
+        parser.add_argument(
+            "--command",
+            type=str,
+            required=True,
+            choices=[
+                CMD_AUTHORIZE,
+                CMD_AUTHORIZED,
+                CMD_CREATE,
+                CMD_DELETE,
+                CMD_LIST,
+                CMD_PROXY,
+                CMD_RENAME,
+                CMD_USE
+            ],
+            help="Git Tools Command")
+
+        parser.add_argument(
+            "--repo",
+            type=str,
+            required=False,
+            default="",
+            help="specify a repository name")
+
+        parser.add_argument(
+            "--sshkey",
+            type=str,
+            required=False,
+            default="",
+            help="specify an ssh public key")
+
+        parser.add_argument(
+            "--source",
+            type=str,
+            required=False,
+            default="",
+            help="specify a source repository name"
+        )
+
+        parser.add_argument(
+            "--destination",
+            type=str,
+            required=False,
+            default="",
+            help="specify a destination repository name"
+        )
+
+        parser.add_argument(
+            "--server",
+            type=str,
+            required=False,
+            default="",
+            help="specify a git server")
+
+        parser.add_argument(
+            "--global",
+            dest="scope",
+            required=False,
+            action="store_true",
+            default=False,
+            help="search global or local .gitconfig")
+
+        parser.add_argument(
+            "--debug",
+            required=False,
+            default=False,
+            action="store_true",
+            help="enable debug messages"
+        )
+
+        self.args = parser.parse_args()
+        self.debug("Commandline arguments processed.")
 
     def debug(self, msg: str) -> None:
         """
@@ -83,7 +196,7 @@ class GitServer(object):
             :param msg: str
             :return: None
         """
-        if self.__debug:
+        if self.args.debug:
             print(f"[DEBUG]: {msg}")
 
     @staticmethod
@@ -96,7 +209,7 @@ class GitServer(object):
             :return: bool
         """
         # ToDo: validate name against a regex
-        for disallowed_server in disallowed_git_servers:
+        for disallowed_server in GitServer.__disallowed_git_servers:
             if disallowed_server in server_name:
                 return False
         return True
@@ -109,9 +222,21 @@ class GitServer(object):
             :return: bool
         """
         self.debug(f"Validating repo '{repo}'")
-        pattern = compile("^[a-zA-Z][a-zA-Z./-_/0-9]+[a-zA-Z0-9]$")
+        pattern = compile(GitServer.__valid_repo_name_regex)
         self.debug(f"Valid? {pattern.match(repo)}")
         return pattern.match(repo) is not None
+
+    def __valid_sshkey_name(self, key: str) -> bool:
+        """
+            Determine if the ssh key is valid
+
+            :param key: str
+            :return: bool
+        """
+        self.debug(f"Validating ssh key '{key}'")
+        pattern = compile(GitServer.__valid_sshkey_regex)
+        self.debug(f"Valid? {pattern.match(key)}")
+        return pattern.match(key) is not None
 
     @staticmethod
     def __global_flag(global_scope: bool) -> str:
@@ -154,7 +279,7 @@ class GitServer(object):
             :return: int(exit_code), str(stdout)
         """
         try:
-            cmd = f"ssh -o 'StrictHostKeyChecking no' " + \
+            cmd = "ssh -o 'StrictHostKeyChecking no' " + \
                   f"git@{server} {command}"
             self.debug(f"command(ssh_runner): {cmd}")
             return self.runner(cmd)
@@ -210,7 +335,8 @@ class GitServer(object):
                     if this_scope:
                         return exit_code, stdout
                     else:
-                        return self.__set_server(server_name=server_name, this_scope=True)
+                        return self.__set_server(server_name=server_name,
+                                                 this_scope=True)
                 else:
                     return exit_code, stdout
 
@@ -220,10 +346,65 @@ class GitServer(object):
                     "disallowed git servers that cannot be used with Git Tools"
         except Exception as e:
             if this_scope:
-                return EXIT_ERROR_SET_SERVER_EXCEPTION, f"(setting preferred server) {e}"
+                return EXIT_ERROR_SET_SERVER_EXCEPTION, \
+                    f"(setting preferred server) {e}"
             else:
                 self.debug("escalating scope")
-                return self.__set_server(server_name=server_name, this_scope=True)
+                return self.__set_server(server_name=server_name,
+                                         this_scope=True)
+
+    def authorize(self, ssh_key: str,
+                  search_scope: bool = False) -> (int, str):
+        """
+            Add a new authorized ssh key to the preferred git server.
+
+            :param ssh_key: str
+            :param search_scope: bool (default: False
+            :return: int (exit_code), str (list of repos)
+        """
+        server = ""
+        try:
+            self.debug("authorize() starting...")
+            exit_code, stdout = self.__get_server(search_scope)
+            if exit_code != 0:
+                self.debug(f"could not find preferred server"
+                           f"[{exit_code}]: '{stdout}'")
+                return exit_code, stdout
+            server = stdout
+            cmd = f"authorize '{ssh_key}'"
+            exit_code, stdout = self.ssh_runner(server=server,
+                                                command=cmd)
+            if exit_code == 255:
+                return 255, "connection failed (unauthorized)"
+            else:
+                return exit_code, stdout
+
+        except Exception as e:
+            return EXIT_ERROR_AUTH_REPO_EXCEPTION, \
+                f"could not create repository ({ssh_key}) " \
+                f"on '{server}'. {e}"
+
+    def authorized(self, search_scope: bool = False) -> (int, str):
+        """
+            Return an enumerated list of authorized keys for the
+            preferred server.
+
+            :param search_scope: bool (default: False
+            :return: int (exit_code), str (list of repos)
+        """
+        exit_code, stdout = self.__get_server(search_scope)
+        if exit_code != 0:
+            return exit_code, f"(authorized): {stdout}"
+        server = stdout
+        exit_code, stdout = self.ssh_runner(server=server,
+                                            command=CMD_AUTHORIZED)
+        if exit_code == 1:
+            return 1, f"Please use 'git authorize --sshkey <key>' " \
+                      f"first. {stdout}"
+        elif exit_code == 255:
+            return 255, "connection failed (unauthorized)"
+        else:
+            return exit_code, stdout
 
     def create_repository(self, repo: str,
                           search_scope: bool = False) -> (int, str):
@@ -303,7 +484,8 @@ class GitServer(object):
             if exit_code != 0:
                 return exit_code, f"(list): {stdout}"
             server = stdout
-            exit_code, stdout = self.ssh_runner(server=server, command=CMD_LIST)
+            exit_code, stdout = self.ssh_runner(server=server,
+                                                command=CMD_LIST)
             if exit_code == 0:
                 repo_list = ""
                 header = "repositories on {server}"
@@ -343,6 +525,34 @@ class GitServer(object):
         except Exception as e:
             return EXIT_ERROR_LIST_REPOS_EXCEPTION, \
                 f"Error: could not list repositories. {e}"
+
+    def proxy(self, repo: str, search_scope: bool = False) -> (int, str):
+        """
+            Clone a repository from a third-party server to the git-server
+            as a proxy, which will allow for a chained interaction from the
+            user/client to the git-server then up to the third-party remote
+            server.
+
+            :param repo:
+            :param search_scope:
+            :return: int (exit_code), str (list of repos)
+        """
+        server = ""
+        try:
+            self.debug(f"Get Preferred server to proxy '{repo}'")
+            exit_code, stdout = self.__get_server(search_scope)
+            if exit_code == 0:
+                self.debug(f"Preferred server found for proxy '{repo}'")
+            else:
+                self.debug(f"could not find preferred server"
+                           f"[{exit_code}]: '{stdout}'")
+                return exit_code, stdout
+            server = stdout
+            cmd = f"proxy {repo}"
+            return self.ssh_runner(server=server, command=cmd)
+        except Exception as e:
+            return EXIT_ERROR_PROXY_REPO_EXCEPTION, \
+                f"could not proxy repository ({repo}) on '{server}'. {e}"
 
     def rename(self, source_repo: str, destination_repo: str,
                search_scope: bool = False) -> (int, str):
@@ -386,182 +596,259 @@ class GitServer(object):
             return exit_code, \
                 f"Set preferred server ('{server_name}'): failed"
 
-
-def get_args() -> Namespace:
-    """
-        get commandline arguments
-
-        :return: Namespace
-    """
-    parser = ArgumentParser(description="Git Tools CommandLine")
-    parser.add_argument(
-        "--command",
-        type=str,
-        required=True,
-        choices=[
-            CMD_CREATE,
-            CMD_DELETE,
-            CMD_LIST,
-            CMD_RENAME,
-            CMD_USE
-        ],
-        help="Git Tools Command")
-
-    parser.add_argument(
-        "--repo",
-        type=str,
-        required=False,
-        default="",
-        help="specify a repository name")
-
-    parser.add_argument(
-        "--source",
-        type=str,
-        required=False,
-        default="",
-        help="specify a source repository name"
-    )
-
-    parser.add_argument(
-        "--destination",
-        type=str,
-        required=False,
-        default="",
-        help="specify a destination repository name"
-    )
-
-    parser.add_argument(
-        "--server",
-        type=str,
-        required=False,
-        default="",
-        help="specify a git server")
-
-    parser.add_argument(
-        "--global",
-        dest="scope",
-        required=False,
-        action="store_true",
-        default=False,
-        help="search global or local .gitconfig")
-
-    parser.add_argument(
-        "--debug",
-        required=False,
-        default=False,
-        action="store_true",
-        help="enable debug messages"
-    )
-
-    return parser.parse_args()
-
-
-def show_usage(error: str, exit_code: int = 255) -> int:
-    """
-        Show the program usage on error.
-
-        :param error: str
-        :param exit_code: int (default: 255)
-        :return: int
-    """
-    if error.strip() == "":
-        error = "unspecified"
-    print(f"Error: '{error}'\n\n{help_text}\n")
-    return exit_code
-
-
-def main() -> int:
-    """
-        main program for executing commandline.
-
-        :return: int (exit code)
-    """
-    args = get_args()
-    git = GitServer(args.debug)
-
-    if args.command in [CMD_USE]:
+    @staticmethod
+    def show_usage(error: str,
+                   ret_code: int = EXIT_UNDEFINED_ERROR) -> int:
         """
-            git use <server>
-                -- define the preferred git server for the specified scope
-                -- where scope is not defined, local scope will be used if
-                   the current directory is a git repo.
-                -- if no scope is defined in the current directory, scope 
-                   will fall back to global scope.
+            Show the program usage on error.
+
+            :param error: str
+            :param ret_code: int (default: EXIT_UNDEFINED_ERROR)
+            :return: int
         """
-        if args.server.strip() == "":
-            return show_usage("preferred server not specified for "
-                              f"{args.command}.",
-                              EXIT_ERROR_ARG_USE_SERVER_MISSING)
+        if error.strip() == "":
+            error = "unspecified error"
+        print(f"Error: '{error}'\n\n{help_text}\n")
+        return ret_code
 
-        if args.repo.strip() != "":
-            return show_usage("repo should not be specified for "
-                              f"{args.command}",
-                              EXIT_ERROR_ARG_USE_REPO_SPECIFIED)
+    def prohibited(self,
+                   param_name: str,
+                   param_value: str,
+                   ret_code: int = EXIT_SUCCESS) -> int:
+        """
+            return exit_code and message if prohibited
+            pattern is not empty
 
-        exit_code, stdout = git.use(server_name=args.server, this_scope=args.scope)
-
-        if exit_code == 0:
-            print(stdout)
-            return exit_code
+            :param param_name: str
+            :param param_value: str
+            :param ret_code: int (default: EXIT_SUCCESS)
+            :return: int (exit_code), str (list of repos)
+        """
+        if param_value == "":
+            return 0
         else:
-            return show_usage(stdout, exit_code)
+            return self.show_usage(f"{param_name} should not be provided "
+                                   f"for {self.args.command}", ret_code)
 
-    elif args.command in [CMD_CREATE, CMD_DELETE]:
+    def required(self,
+                 param_name: str,
+                 param_value: str,
+                 ret_code: int = EXIT_SUCCESS) -> int:
+        """
+            return exit_code and message if required
+            parameter is missing
+
+            :param param_name: str
+            :param param_value: str
+            :param ret_code: int (default: EXIT_SUCCESS)
+            :return: int (exit_code), str (list of repos)
+        """
+        if param_value == "":
+            return self.show_usage(f"{param_name} must be provided "
+                                   f"for {self.args.command}", ret_code)
+        else:
+            return 0
+
+    def parameter_check(self, required: dict,
+                        prohibited: dict) -> int:
+        """
+            check the set of required parameters
+
+            :param required: dict - set of required parameters.
+            :param prohibited: dict - set of prohibited parameters.
+            :return: int (exit_code)
+        """
+        check_config = {
+            "prohibited": {"fn": self.prohibited, "data": prohibited},
+            "required": {"fn": self.required, "data": required}
+        }
+        for prefix, check in check_config.items():
+            check_function = check.get("fn")
+            for p, v in check.get("data", {}).items():
+                error_vector = f"{prefix}_{p}"
+                code = check_function(p,
+                                      v,
+                                      GitServer.__arg_error_codes.get(
+                                          error_vector,
+                                          EXIT_UNSPECIFIED_ERROR))
+                if code == EXIT_SUCCESS:
+                    self.debug(f"\t\t{p:30}: ok")
+                else:
+                    self.debug(f"\t\t{p:30}: fail ({code})")
+                    return code
+        self.debug("parameter_check() complete")
+        return 0
+
+    def cmd_authorize(self) -> int:
+        """
+            git authorize <ssh_public_key>
+                authorize a new ssh public key for the
+                current preferred git server.
+        """
+        exit_code = self.parameter_check(
+            required={
+                "sshkey": self.args.sshkey.strip()
+            },
+            prohibited={
+                "repo": self.args.repo.strip(),
+                "source": self.args.source.strip(),
+                "destination": self.args.destination.strip(),
+                "server": self.args.server.strip()
+            })
+        if exit_code != EXIT_SUCCESS:
+            return exit_code
+        if self.__valid_sshkey_name(self.args.sshkey):
+            self.debug("Key is valid")
+        else:
+            print("Invalid SSH Key")
+            return EXIT_ERROR_SSH_INVALID_KEY
+        exit_code, stdout = self.authorize(ssh_key=self.args.sshkey,
+                                           search_scope=self.args.scope)
+        if exit_code != 0:
+            return self.show_usage(stdout, exit_code)
+        else:
+            print(f"{stdout}\n")
+            return exit_code
+
+    def cmd_authorized(self) -> int:
+        """
+            git authorized
+                list the authorized ssh keys on the preferred server
+        """
+        self.debug("cmd_authorized() starting...")
+        exit_code = self.parameter_check(
+            required=REQUIRE_NO_PARAMETERS,
+            prohibited={
+                "repo": self.args.repo.strip(),
+                "source": self.args.source.strip(),
+                "destination": self.args.destination.strip(),
+                "server": self.args.server.strip(),
+                "sshkey": self.args.sshkey.strip()
+            })
+        if exit_code != EXIT_SUCCESS:
+            return exit_code
+        exit_code, stdout = self.authorized(self.args.scope)
+        if exit_code != 0:
+            return self.show_usage(stdout, exit_code)
+        else:
+            print(f"{stdout}\n")
+            return exit_code
+
+    def cmd_create(self) -> int:
         """
             get create <repo>
-            get delete <repo>
                 -- create or delete a repository on the preferred git server,
                    where scope is defined or where the preferred git server
                    lists repositories on a locally defined server and if not
                    defined it will list the repositories on the globally
                    defined preferred server.
         """
-        if args.repo.strip() == "":
-            return show_usage(f"repo not specified for {args.command}.",
-                              EXIT_ERROR_CRDEL_REPO_MISSING)
-
-        if args.server.strip() != "":
-            return show_usage("preferred server should not be specified for "
-                              f"{args.command}",
-                              EXIT_ERROR_CRDEL_SERVER_SPECIFIED)
-
-        if args.command == CMD_CREATE:
-            exit_code, stdout = git.create_repository(repo=args.repo,
-                                                      search_scope=args.scope)
-        else:
-            exit_code, stdout = git.delete_repository(repo=args.repo,
-                                                      search_scope=args.scope)
-        if exit_code == 0:
-            print("OK")
-            return 0
-        else:
-            return show_usage(stdout, exit_code)
-
-    elif args.command in [CMD_LIST]:
-        """
-            git list
-                -- list the repositories on the preferred git server, where 
-                   scope is defined or where the preferred git server lists
-                   repositories on a locally defined server and if not
-                   defined it will list the repositories on the globally
-                   defined preferred server.
-        """
-        if args.repo.strip() != "":
-            return show_usage("repo should not be specified for "
-                              f"{args.command}",
-                              EXIT_ERROR_LIST_REPO_SPECIFIED)
-        if args.server.strip() != "":
-            return show_usage("preferred server should not be specified for "
-                              f"{args.command}",
-                              EXIT_ERROR_LIST_SERVER_SPECIFIED)
-        exit_code, text = git.list_repositories(args.scope)
-        if exit_code != 0:
-            return show_usage(text, exit_code)
-        else:
-            print(text)
+        exit_code = self.parameter_check(
+            required={
+                "repo": self.args.repo.strip(),
+            },
+            prohibited={
+                "server": self.args.server.strip(),
+                "source": self.args.source.strip(),
+                "destination": self.args.destination.strip(),
+                "sshkey": self.args.sshkey.strip()
+            })
+        if exit_code != EXIT_SUCCESS:
             return exit_code
 
-    elif args.command in [CMD_RENAME]:
+        exit_code, stdout = self.create_repository(
+            repo=self.args.repo,
+            search_scope=self.args.scope)
+        if exit_code != 0:
+            return self.show_usage(stdout, exit_code)
+        else:
+            print(stdout)
+            return exit_code
+
+    def cmd_delete(self) -> int:
+        """
+             get delete <repo>
+                 -- create or delete a repository on the preferred git server,
+                    where scope is defined or where the preferred git server
+                    lists repositories on a locally defined server and if not
+                    defined it will list the repositories on the globally
+                    defined preferred server.
+         """
+        exit_code = self.parameter_check(
+            required={
+                "repo": self.args.repo.strip(),
+            },
+            prohibited={
+                "server": self.args.server.strip(),
+                "source": self.args.source.strip(),
+                "destination": self.args.destination.strip(),
+                "sshkey": self.args.sshkey.strip()
+            })
+        if exit_code != EXIT_SUCCESS:
+            return exit_code
+
+        exit_code, stdout = self.delete_repository(
+            repo=self.args.repo,
+            search_scope=self.args.scope)
+        if exit_code != 0:
+            return self.show_usage(stdout, exit_code)
+        else:
+            print(stdout)
+            return exit_code
+
+    def cmd_list(self) -> int:
+        """
+            git list
+                lists the repositories on the preferred git server, where
+                scope is defined or where the preferred git server lists
+                repositories on a locally defined server and if not
+                defined it will list the repositories on the globally
+                defined preferred server.
+        """
+        self.debug("cmd_list() starting...")
+        exit_code = self.parameter_check(
+            required=REQUIRE_NO_PARAMETERS,
+            prohibited={
+                "repo": self.args.repo.strip(),
+                "server": self.args.server.strip(),
+                "source": self.args.source.strip(),
+                "destination": self.args.destination.strip(),
+                "sshkey": self.args.sshkey.strip()
+            })
+        self.debug(f"cmd_list() input validation: {exit_code}")
+        if exit_code != EXIT_SUCCESS:
+            return exit_code
+
+        exit_code, stdout = self.list_repositories(self.args.scope)
+        self.debug(f"cmd_list() list_repositories() has returned {exit_code}")
+        if exit_code != 0:
+            return self.show_usage(stdout, exit_code)
+        else:
+            print(stdout)
+            return exit_code
+
+    def cmd_proxy(self) -> int:
+        """
+            Clone a given repository via ssh into the preferred
+            server
+        """
+        exit_code = self.parameter_check(
+            required={
+                "repo": self.args.repo.strip(),
+            },
+            prohibited={
+                "server": self.args.server.strip(),
+                "source": self.args.source.strip(),
+                "destination": self.args.destination.strip(),
+                "sshkey": self.args.sshkey.strip()
+            })
+        if exit_code != EXIT_SUCCESS:
+            return exit_code
+        #
+        # ToDo: Call the authorize command.
+        #
+
+    def cmd_rename(self) -> int:
         """
             get rename <source_repo> <destination_repo>
                 -- rename/move a source_repo to the destination_repo.
@@ -571,34 +858,87 @@ def main() -> int:
                    defined it will list the repositories on the globally
                    defined preferred server.
         """
-        if args.server.strip() != "":
-            return show_usage("server should not be specified for "
-                              f"{args.command}.",
-                              EXIT_ERROR_ARG_USE_SERVER_MISSING)
+        exit_code = self.parameter_check(
+            required={
+                "destination": self.args.destination.strip(),
+                "source": self.args.source.strip()
+            },
+            prohibited={
+                "repo": self.args.repo.strip(),
+                "server": self.args.server.strip(),
+                "sshkey": self.args.sshkey.strip()
+            })
+        if exit_code != EXIT_SUCCESS:
+            return exit_code
 
-        if args.source.strip() == "":
-            return show_usage("source should be specified for "
-                              f"{args.command}",
-                              EXIT_ERROR_ARG_RENAME_SRC_REPO_MISSING)
-
-        if args.destination.strip() == "":
-            return show_usage("destination should be specified for "
-                              f"{args.command}",
-                              EXIT_ERROR_ARG_RENAME_DEST_REPO_MISSING)
-
-        exit_code, stdout = git.rename(
-            source_repo=args.source.strip(),
-            destination_repo=args.destination.strip(),
-            search_scope=args.scope)
+        exit_code, stdout = self.rename(
+            source_repo=self.args.source.strip(),
+            destination_repo=self.args.destination.strip(),
+            search_scope=self.args.scope)
 
         if exit_code != 0:
-            return show_usage(stdout, exit_code)
+            return self.show_usage(stdout, exit_code)
         return exit_code
-    else:
-        return show_usage("Internal programming error "
-                          f"(command: {args.command})",
-                          EXIT_INTERNAL_ERROR_INVALID_CMD)
+
+    def cmd_use(self) -> int:
+        """
+            git use <server>
+                -- define the preferred git server for the specified scope
+                -- where scope is not defined, local scope will be used if
+                   the current directory is a git repo.
+                -- if no scope is defined in the current directory, scope
+                   will fall back to global scope.
+        """
+        exit_code = self.parameter_check(
+            required={
+                "server": self.args.server.strip(),
+            },
+            prohibited={
+                "repo": self.args.repo.strip(),
+                "destination": self.args.destination.strip(),
+                "source": self.args.source.strip(),
+                "sshkey": self.args.sshkey.strip()
+            })
+        if exit_code != EXIT_SUCCESS:
+            return exit_code
+
+        exit_code, stdout = self.use(server_name=self.args.server,
+                                     this_scope=self.args.scope)
+
+        if exit_code == 0:
+            print(stdout)
+            return exit_code
+        else:
+            return self.show_usage(stdout, exit_code)
+
+    def execute(self) -> int:
+        """
+            execute the git commands defined in command-line arguments.
+            :return: int (exit code)
+        """
+        self.debug(f"execute() is starting... "
+                   f"(command: {self.args.command})")
+        vector_table = {
+            CMD_AUTHORIZE: self.cmd_authorize,
+            CMD_AUTHORIZED: self.cmd_authorized,
+            CMD_CREATE: self.cmd_create,
+            CMD_DELETE: self.cmd_delete,
+            CMD_LIST: self.cmd_list,
+            CMD_PROXY: self.cmd_proxy,
+            CMD_RENAME: self.cmd_rename,
+            CMD_USE: self.cmd_use
+        }
+        self.debug(f"is command in vector_table? "
+                   f"{self.args.command in vector_table}")
+        command = vector_table.get(self.args.command, None)
+        self.debug("command is setup")
+        if command is None:
+            return self.show_usage("Internal programming error "
+                                   f"(command: {self.args.command})",
+                                   EXIT_INTERNAL_ERROR_INVALID_CMD)
+        else:
+            return command()
 
 
 if __name__ == "__main__":
-    exit(main())
+    exit(GitServer().execute())
