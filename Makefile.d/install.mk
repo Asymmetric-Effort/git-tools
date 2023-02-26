@@ -22,3 +22,5 @@ git_tools/install: git_tools/backup
 		esac; \
 		echo "$@ completed." \
 	)
+
+install: git_tools/install
