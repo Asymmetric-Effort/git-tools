@@ -371,7 +371,7 @@ class GitServer(object):
                            f"[{exit_code}]: '{stdout}'")
                 return exit_code, stdout
             server = stdout
-            cmd = f"authorize '{ssh_key}'"
+            cmd = f"authorize --sshkey '{ssh_key}'"
             exit_code, stdout = self.ssh_runner(server=server,
                                                 command=cmd)
             if exit_code == 255:
@@ -702,7 +702,7 @@ class GitServer(object):
         else:
             print("Invalid SSH Key")
             return EXIT_ERROR_SSH_INVALID_KEY
-        exit_code, stdout = self.authorize(ssh_key=self.args.sshkey,
+        exit_code, stdout = self.authorize(ssh_key=self.args.sshkey.strip(),
                                            search_scope=self.args.scope)
         if exit_code != 0:
             return self.show_usage(stdout, exit_code)
