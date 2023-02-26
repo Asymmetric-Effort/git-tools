@@ -1,7 +1,19 @@
 #!/bin/bash -e
-echo "-----------------"
-echo "     source: ${1}"
-echo "destination: ${2}"
-echo "-----------------"
-"$(which python)" ~/git-tools/git_server.py --command rename --source "${1}" --destination "${2}"
-exit $?
+
+if [[ "${2}" == "--debug" ]]; then
+  echo "operation: 'proxy', name: '${1}'  (this: $0)"
+  echo "-----------------"
+  echo "     source: ${1}"
+  echo "destination: ${2}"
+  echo "-----------------"
+  "$(which python)" ~/git-tools/git_server.py --command rename \
+                                              --source "${1}" \
+                                              --destination "${2}" \
+                                              --debug
+  exit $?
+else
+  "$(which python)" ~/git-tools/git_server.py --command rename \
+                                              --source "${1}" \
+                                              --destination "${2}"
+  exit $?
+fi
